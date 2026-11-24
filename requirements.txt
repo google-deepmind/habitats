@@ -1,0 +1,38 @@
+# Python >= 3.12, < 3.14 required (uses `typing.override`).
+
+# Core utilities & configuration
+absl-py>=2.0.0
+etils[epath]>=1.9.0
+numpy>=2.0.0
+
+# Environments & RL interfaces
+brax>=0.12.0,<=0.14.2
+chex>=0.1.86
+dm-acme @ git+https://github.com/google-deepmind/acme.git@1bc05bea97b94a2da7e5315b315118bdaa98f1f3
+dm-env>=1.6
+dm-haiku>=0.0.12
+dm-sonnet>=2.0.2
+dm-tree>=0.1.8
+mujoco>=3.2.0
+mujoco-mjx>=3.2.0
+rlax>=0.1.6
+
+# JAX & optimization
+jax>=0.6.0,<0.10.0
+jaxlib>=0.6.0,<0.10.0
+flax>=0.8.5,<0.12.7
+optax>=0.2.0
+orbax-checkpoint>=0.11.22
+
+# Metric logging
+clu>=0.0.12
+tensorboard>=2.16.0
+tensorflow>=2.16.0
+tf-keras>=2.16.0
+
+# LLM backend
+google-api-core>=2.19.0
+google-genai>=1.0.0
+
+# Testing
+pytest>=8.0.0
