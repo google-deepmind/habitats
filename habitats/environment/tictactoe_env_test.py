@@ -160,6 +160,29 @@ class TicTacToeEnvTest(absltest.TestCase):
     self.assertTrue(timestep.last())
     self.assertEqual(env.board[8], 1)
 
+  def test_legal_actions_are_the_empty_cells(self):
+    env = tictactoe_env.TicTacToeEnv(playground=False)
+    env.reset()
+    self.assertTrue(env.legal_actions().all())
+
+    env.board = [1, 0, 0, 2, 2, 0, 1, 0, 0]
+
+    self.assertEqual(
+        env.legal_actions().tolist(),
+        [False, True, True, False, False, True, False, True, True],
+    )
+
+  def test_illegal_action_per_mask_is_rejected_by_step(self):
+    env = tictactoe_env.TicTacToeEnv(playground=False)
+    env.reset()
+    env.board = [1, 0, 0, 2, 2, 0, 1, 0, 0]
+    self.assertFalse(env.legal_actions()[3])
+
+    timestep = env.step(3)
+
+    self.assertEqual(timestep.reward, -10.0)
+    self.assertTrue(timestep.last())
+
 
 if __name__ == "__main__":
   absltest.main()

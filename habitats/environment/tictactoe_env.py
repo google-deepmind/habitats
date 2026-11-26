@@ -18,6 +18,7 @@
 import random
 import dm_env
 from dm_env import specs
+import numpy as np
 
 
 class TicTacToeEnv(dm_env.Environment):
@@ -67,6 +68,10 @@ class TicTacToeEnv(dm_env.Environment):
         "Bot-Mid (7)",
         "Bot-Right (8)",
     ]
+
+  def legal_actions(self) -> np.ndarray:
+    """Returns which cells are empty, one boolean per action."""
+    return np.array([cell == 0 for cell in self.board], dtype=bool)
 
   def reset(self) -> dm_env.TimeStep:
     self.board = [0] * 9

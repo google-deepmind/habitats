@@ -115,6 +115,25 @@ class MiniCardDeckEnv(dm_env.Environment):
     else:
       return dm_env.transition(reward, state_idx)
 
+  def legal_actions(self) -> np.ndarray:
+    """Returns which actions `step` would accept in the current state.
+
+    Unlike the state index, this accounts for the deck: drawing is illegal once
+    the deck is empty, which the observation does not reveal.
+
+    Returns:
+      A boolean array with one entry per action.
+    """
+    hand_empty = self._hand == 0
+    mask = np.zeros(self._action_spec.num_values, dtype=bool)
+    mask[0] = True  # Pass
+    mask[1] = hand_empty and bool(self._deck)  # Draw
+    for slot_idx, card in enumerate(self._table):
+      mask[2 + slot_idx] = not hand_empty and card == 0  # Play
+      mask[5 + slot_idx] = hand_empty and card != 0  # Take
+    mask[8] = not hand_empty  # Discard
+    return mask
+
   def action_spec(self) -> specs.DiscreteArray:
     return self._action_spec
 
@@ -190,6 +209,10 @@ class MiniCardDeckRewardWrapper(dm_env.Environment):
   def reset(self) -> dm_env.TimeStep:
     return self.env.reset()
 
+  def legal_actions(self) -> np.ndarray:
+    """Returns which actions the wrapped environment would accept."""
+    return self.env.legal_actions()
+
   def step(self, action: Any) -> dm_env.TimeStep:
     timestep = self.env.step(action)
     base_reward = timestep.reward
@@ -241,6 +264,10 @@ class BaseCardDeckGameWrapper(dm_env.Environment):
 
   def reset(self) -> dm_env.TimeStep:
     return self.env.reset()
+
+  def legal_actions(self) -> np.ndarray:
+    """Returns which actions the wrapped environment would accept."""
+    return self.env.legal_actions()
 
   def action_spec(self) -> specs.Array:
     return self.env.action_spec()

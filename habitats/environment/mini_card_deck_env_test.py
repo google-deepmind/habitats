@@ -17,6 +17,7 @@
 
 from absl.testing import absltest
 from habitats.environment import mini_card_deck_env
+import numpy as np
 
 
 class MiniCardDeckEnvTest(absltest.TestCase):
@@ -263,6 +264,77 @@ class MiniCardDeckRewardWrapperTest(absltest.TestCase):
 
     self.assertEqual(timestep.reward, 0.0)
     self.assertFalse(timestep.last())
+
+
+class MiniCardDeckLegalActionsTest(absltest.TestCase):
+
+  def test_empty_hand_and_table_allows_only_pass_and_draw(self):
+    env = mini_card_deck_env.MiniCardDeckEnv(seed=42)
+    env.reset()
+
+    self.assertEqual(np.flatnonzero(env.legal_actions()).tolist(), [0, 1])
+
+  def test_card_in_hand_allows_play_to_empty_slots_and_discard(self):
+    env = mini_card_deck_env.MiniCardDeckEnv(seed=42)
+    env.reset()
+    env.step(1)  # Draw
+    env.step(3)  # Play to slot 1
+    env.step(1)  # Draw
+
+    self.assertEqual(np.flatnonzero(env.legal_actions()).tolist(), [0, 2, 4, 8])
+
+  def test_empty_hand_allows_take_from_occupied_slots(self):
+    env = mini_card_deck_env.MiniCardDeckEnv(seed=42)
+    env.reset()
+    env.step(1)  # Draw
+    env.step(3)  # Play to slot 1
+
+    self.assertEqual(np.flatnonzero(env.legal_actions()).tolist(), [0, 1, 6])
+
+  def test_draw_is_illegal_once_deck_is_empty(self):
+    env = mini_card_deck_env.MiniCardDeckEnv(seed=42)
+    env.reset()
+    env._deck = []
+
+    # The state index is the same as right after reset, where Draw is legal.
+    self.assertEqual(env._get_state_index(), 0)
+    self.assertEqual(np.flatnonzero(env.legal_actions()).tolist(), [0])
+
+  def test_mask_agrees_with_step_penalty(self):
+    env = mini_card_deck_env.MiniCardDeckEnv(seed=0, max_steps=2000)
+    rng = np.random.RandomState(0)
+    env.reset()
+    num_illegal = 0
+
+    for _ in range(2000):
+      action = int(rng.randint(9))
+      was_legal = bool(env.legal_actions()[action])
+      timestep = env.step(action)
+      self.assertEqual(timestep.reward == 0.0, was_legal)
+      num_illegal += not was_legal
+
+    # The rollout exercises both outcomes, including the empty deck.
+    self.assertGreater(num_illegal, 0)
+    self.assertEmpty(env.deck)
+
+  def test_game_wrapper_reports_base_environment_mask(self):
+    env = mini_card_deck_env.AscendingSortGame(seed=42)
+    env.reset()
+    env.step(1)  # Draw
+
+    np.testing.assert_array_equal(env.legal_actions(), env.env.legal_actions())
+    self.assertEqual(
+        np.flatnonzero(env.legal_actions()).tolist(), [0, 2, 3, 4, 8]
+    )
+
+  def test_reward_wrapper_reports_base_environment_mask(self):
+    base_env = mini_card_deck_env.MiniCardDeckEnv(seed=42)
+    env = mini_card_deck_env.MiniCardDeckRewardWrapper(base_env)
+    env.reset()
+
+    self.assertEqual(np.flatnonzero(env.legal_actions()).tolist(), [0, 1])
+    base_env._deck = []
+    self.assertEqual(np.flatnonzero(env.legal_actions()).tolist(), [0])
 
 
 if __name__ == "__main__":
