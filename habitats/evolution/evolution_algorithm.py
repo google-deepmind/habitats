@@ -48,6 +48,7 @@ class EvolutionAlgorithm:
       run_id: str,
       api_key: str | None = None,
       training_pool: training_pool_lib.TrainingPool | None = None,
+      llm_call_logger: llm_client.CallLogger | None = None,
   ):
     self.config = config
     self.run_id = run_id
@@ -57,9 +58,13 @@ class EvolutionAlgorithm:
 
     self._validate_config()
 
+    # Every LLM client derived from this config (population initializer,
+    # offspring generator and their sub-roles) reports its calls to
+    # `llm_call_logger`; None disables call logging.
     self.llm_config = llm_client.LLMConfig(
         role="",
         key=api_key,
+        call_logger=llm_call_logger,
     )
 
     self.api_key = api_key

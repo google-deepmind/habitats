@@ -288,6 +288,27 @@ class EvolvePopulationTest(absltest.TestCase):
     self.assertEqual(next_agents["agent_2"].generation, 1)
     self.assertEqual(next_agents["agent_2"].reward_code, "return 2.0")
 
+  def test_llm_call_logger_reaches_llm_config(self):
+    config = evolution_algorithm_config.EvolutionAlgorithmConfig(
+        training_config=training.get_config("test"),
+    )
+    pool = training_pool_lib.TrainingPool([
+        mock.create_autospec(
+            training_pool_lib.TrainingWorkerInterface, instance=True
+        )
+    ])
+    call_logger = mock.Mock()
+
+    with mock.patch.object(llm_client, "get_backend", autospec=True):
+      algo = evolution_algorithm.EvolutionAlgorithm(
+          config=config,
+          run_id="test_run",
+          training_pool=pool,
+          llm_call_logger=call_logger,
+      )
+
+    self.assertIs(algo.llm_config.call_logger, call_logger)
+
   def test_uses_diverse_reward_initializer_for_initial_population(self):
     config = evolution_algorithm_config.EvolutionAlgorithmConfig(
         training_config=training.get_config("test"),
