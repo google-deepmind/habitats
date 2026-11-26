@@ -41,12 +41,32 @@ class TabularPolicy(policy.Policy[int]):
     return self
 
   @override
-  def get_action(self, state: int, exploit: bool = False) -> np.ndarray:
-    """Selects an action using greedy tie-breaking over the Q-table."""
+  def get_action(
+      self,
+      state: int,
+      exploit: bool = False,
+      legal_actions: np.ndarray | None = None,
+  ) -> np.ndarray:
+    """Selects an action using greedy tie-breaking over the Q-table.
+
+    Args:
+      state: The state index.
+      exploit: Whether to break ties deterministically (first maximum) instead
+        of uniformly at random.
+      legal_actions: Optional boolean mask over actions. When given, only
+        actions marked legal are considered; a mask with no legal action is
+        ignored.
+
+    Returns:
+      The selected action.
+    """
+    q_values = self.q_table[state]
+    if legal_actions is not None and legal_actions.any():
+      q_values = np.where(legal_actions, q_values, -np.inf)
     if exploit:
-      return np.array(np.argmax(self.q_table[state]))
-    max_q = np.max(self.q_table[state])
-    actions = np.where(self.q_table[state] == max_q)[0]
+      return np.array(np.argmax(q_values))
+    max_q = np.max(q_values)
+    actions = np.where(q_values == max_q)[0]
     return np.array(np.random.choice(actions))
 
   @override

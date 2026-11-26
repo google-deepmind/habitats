@@ -35,7 +35,12 @@ class _DummyPolicy(policy_lib.Policy[int]):
     self.action_val = default_action
 
   @override
-  def get_action(self, state: int, exploit: bool = False) -> np.ndarray:
+  def get_action(
+      self,
+      state: int,
+      exploit: bool = False,
+      legal_actions: np.ndarray | None = None,
+  ) -> np.ndarray:
     return np.array(self.action_val)
 
   @override

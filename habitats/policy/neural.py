@@ -142,8 +142,32 @@ class MLPPolicy(policy.Policy[State]):
     )
 
   @override
-  def get_action(self, state: State, exploit: bool = False) -> np.ndarray:
-    """Selects the action for the given state."""
+  def get_action(
+      self,
+      state: State,
+      exploit: bool = False,
+      legal_actions: np.ndarray | None = None,
+  ) -> np.ndarray:
+    """Selects the action for the given state.
+
+    Args:
+      state: The observation.
+      exploit: Whether to return the mean action instead of sampling.
+      legal_actions: Must be None. A legal-action mask has one entry per
+        discrete action, so it cannot apply to this policy's continuous actions.
+
+    Returns:
+      The selected action.
+
+    Raises:
+      ValueError: If `legal_actions` is given, or if the policy parameters are
+        not set.
+    """
+    if legal_actions is not None:
+      raise ValueError(
+          "MLPPolicy produces continuous actions and cannot apply a"
+          " legal-action mask."
+      )
     if self.params is None:
       raise ValueError(
           "Policy parameters are not set. Initialize or load params first."

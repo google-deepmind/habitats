@@ -168,8 +168,25 @@ class Policy(abc.ABC, Generic[T]):
   """A policy for a habitat."""
 
   @abc.abstractmethod
-  def get_action(self, state: T, exploit: bool = False) -> np.ndarray:
-    """Returns the action for the given state."""
+  def get_action(
+      self,
+      state: T,
+      exploit: bool = False,
+      legal_actions: np.ndarray | None = None,
+  ) -> np.ndarray:
+    """Returns the action for the given state.
+
+    Args:
+      state: The state to act in.
+      exploit: Whether to act greedily instead of exploring.
+      legal_actions: Optional boolean mask over the discrete environment
+        actions, `True` where the action is legal in `state`. Policies over
+        discrete actions only return legal actions when it is given; policies
+        over continuous actions reject it.
+
+    Returns:
+      The selected action.
+    """
     pass
 
   @abc.abstractmethod
@@ -213,8 +230,20 @@ class Policy(abc.ABC, Generic[T]):
     """Returns the policy component whose parameters are optimized in training."""
     return self
 
-  def wrap_env(self, env: dm_env.Environment) -> dm_env.Environment:
-    """Adapts `env` for training `trainable_policy` (identity by default)."""
+  def wrap_env(
+      self, env: dm_env.Environment, mask_illegal_actions: bool = False
+  ) -> dm_env.Environment:
+    """Adapts `env` for training `trainable_policy` (identity by default).
+
+    Args:
+      env: The environment to adapt.
+      mask_illegal_actions: Whether frozen components of the policy that act
+        inside the returned environment must only take legal actions.
+
+    Returns:
+      The environment `trainable_policy` is trained on.
+    """
+    del mask_illegal_actions
     return env
 
 
@@ -228,16 +257,23 @@ class MetaPolicyEnvWrapper(
   its `action_spec()`, queries the `k`-th frozen sub-policy at the current
   environment state to obtain a primitive environment action, and steps the
   underlying environment with that primitive action.
+
+  With `mask_illegal_actions`, the selected sub-policy is restricted to the
+  actions the underlying environment reports as legal, so every sub-policy
+  index maps to a legal primitive action. The wrapper itself reports no legal
+  actions: all sub-policy indices are always selectable.
   """
 
   def __init__(
       self,
       env: dm_env.Environment,
       meta_policy: "MetaPolicy[T, SubPolicyT, RouterPolicyT]",
+      mask_illegal_actions: bool = False,
   ):
     """Initializes the wrapper."""
     self._env = env
     self._meta_policy = meta_policy
+    self._mask_illegal_actions = mask_illegal_actions
     self._current_state: T | None = None
 
   @override
@@ -252,14 +288,34 @@ class MetaPolicyEnvWrapper(
     """Routes meta-action through the selected sub-policy and steps env."""
     if self._current_state is None:
       raise RuntimeError("MetaPolicyEnvWrapper.step() called before reset().")
+    legal_actions = None
+    if self._mask_illegal_actions:
+      legal_actions = self._legal_actions()
     primitive_action = self._meta_policy.get_primitive_action(
         self._current_state,
         action,
         exploit=True,
+        legal_actions=legal_actions,
     )
     timestep = self._env.step(primitive_action)
     self._current_state = timestep.observation
     return timestep
+
+  def _legal_actions(self) -> np.ndarray | None:
+    """Returns the legal-action mask of the underlying environment, if any.
+
+    Environments report their legal actions through a `legal_actions()` method
+    returning one boolean per discrete action. Those that do not define it
+    (e.g. continuous-control ones) treat every action as legal.
+
+    Returns:
+      A boolean array of shape `(num_actions,)`, or None if the underlying
+      environment does not report legal actions.
+    """
+    legal_actions_fn = getattr(self._env, "legal_actions", None)
+    if legal_actions_fn is None:
+      return None
+    return np.asarray(legal_actions_fn(), dtype=bool)
 
   @override
   def observation_spec(self) -> specs.Array:
@@ -303,10 +359,10 @@ class MetaPolicy(Policy[T], Generic[T, SubPolicyT, RouterPolicyT]):
 
   @override
   def wrap_env(
-      self, env: dm_env.Environment
+      self, env: dm_env.Environment, mask_illegal_actions: bool = False
   ) -> MetaPolicyEnvWrapper[T, SubPolicyT, RouterPolicyT]:
     """Wraps `env` so actions correspond to selecting a sub-policy."""
-    return MetaPolicyEnvWrapper(env, self)
+    return MetaPolicyEnvWrapper(env, self, mask_illegal_actions)
 
   @abc.abstractmethod
   def _init_router(self) -> RouterPolicyT:
@@ -325,20 +381,52 @@ class MetaPolicy(Policy[T], Generic[T, SubPolicyT, RouterPolicyT]):
       state: T,
       meta_action: int,
       exploit: bool = True,
+      legal_actions: np.ndarray | None = None,
   ) -> np.ndarray:
-    """Queries the selected sub-policy for a primitive environment action."""
+    """Queries the selected sub-policy for a primitive environment action.
+
+    Args:
+      state: The state to act in.
+      meta_action: The index of the sub-policy to query.
+      exploit: Whether the sub-policy acts greedily.
+      legal_actions: Optional boolean mask over the primitive environment
+        actions that the sub-policy is restricted to.
+
+    Returns:
+      The primitive environment action.
+    """
     if not 0 <= meta_action < len(self.policies):
       raise ValueError(
           f"meta_action {meta_action} out of bounds for "
           f"{len(self.policies)} sub-policies."
       )
-    return self.policies[meta_action].get_action(state, exploit=exploit)
+    return self.policies[meta_action].get_action(
+        state, exploit=exploit, legal_actions=legal_actions
+    )
 
   @override
-  def get_action(self, state: T, exploit: bool = False) -> np.ndarray:
-    """Routes state through the meta-policy to a sub-policy's action."""
+  def get_action(
+      self,
+      state: T,
+      exploit: bool = False,
+      legal_actions: np.ndarray | None = None,
+  ) -> np.ndarray:
+    """Routes state through the meta-policy to a sub-policy's action.
+
+    Args:
+      state: The state to act in.
+      exploit: Whether the router acts greedily.
+      legal_actions: Optional boolean mask over the primitive environment
+        actions. It restricts the selected sub-policy, not the router: every
+        sub-policy remains selectable.
+
+    Returns:
+      The primitive environment action.
+    """
     meta_action = self.get_meta_action(state, exploit=exploit)
-    return self.get_primitive_action(state, meta_action, exploit=True)
+    return self.get_primitive_action(
+        state, meta_action, exploit=True, legal_actions=legal_actions
+    )
 
   @override
   def reset(self) -> None:

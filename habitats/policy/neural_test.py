@@ -120,6 +120,15 @@ class NeuralPolicyTest(parameterized.TestCase):
     action = policy.get_action(obs, exploit=True)
     self.assertEqual(action.shape, (self.num_actions,))
 
+  def test_mlp_policy_rejects_legal_action_mask(self):
+    policy = neural.MLPPolicy(self.config, seed=42)
+    obs = np.ones(self.num_states, dtype=np.float32)
+
+    with self.assertRaisesRegex(ValueError, "cannot apply a legal-action mask"):
+      policy.get_action(
+          obs, legal_actions=np.ones(self.num_actions, dtype=bool)
+      )
+
   def test_save_and_load_roundtrip(self):
     policy = neural.MLPPolicy(self.config, seed=42)
     key = jax.random.PRNGKey(0)

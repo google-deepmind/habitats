@@ -19,6 +19,7 @@ import os
 import tempfile
 
 from absl.testing import absltest
+import dm_env
 from dm_env import specs
 from habitats.policy import policy as policy_lib
 from habitats.policy import tabular
@@ -149,6 +150,166 @@ class TabularPolicyTest(absltest.TestCase):
     policy.q_table[1, 3] = 5.0
     tied_actions = [int(policy.get_action(1, exploit=True)) for _ in range(20)]
     self.assertEqual(tied_actions, [2] * 20)
+
+  def test_tabular_policy_only_returns_legal_actions(self):
+    policy = tabular.TabularPolicy(self.model_config)
+    policy.q_table[0] = [1.0, 5.0, 3.0, 0.0]
+    legal_actions = np.array([True, False, True, True])
+
+    # Action 1 has the highest value but is illegal: the best legal one wins.
+    self.assertEqual(
+        int(policy.get_action(0, exploit=True, legal_actions=legal_actions)), 2
+    )
+    explored = {
+        int(policy.get_action(0, exploit=False, legal_actions=legal_actions))
+        for _ in range(20)
+    }
+    self.assertEqual(explored, {2})
+
+  def test_tabular_policy_breaks_ties_among_legal_actions_only(self):
+    policy = tabular.TabularPolicy(self.model_config)
+    legal_actions = np.array([False, True, False, True])
+
+    # All Q-values are tied at 0.0, so every legal action is a candidate.
+    self.assertEqual(
+        int(policy.get_action(0, exploit=True, legal_actions=legal_actions)), 1
+    )
+    np.random.seed(0)
+    explored = {
+        int(policy.get_action(0, exploit=False, legal_actions=legal_actions))
+        for _ in range(50)
+    }
+    self.assertEqual(explored, {1, 3})
+
+  def test_tabular_policy_ignores_mask_without_legal_actions(self):
+    policy = tabular.TabularPolicy(self.model_config)
+    policy.q_table[0] = [1.0, 5.0, 3.0, 0.0]
+
+    action = policy.get_action(
+        0, exploit=True, legal_actions=np.zeros(self.num_actions, dtype=bool)
+    )
+
+    self.assertEqual(int(action), 1)
+
+  def test_tabular_meta_policy_masks_sub_policy_not_router(self):
+    meta_policy = tabular.TabularMetaPolicy(self._make_meta_config(2))
+    meta_policy.policies[0].q_table[0] = [0.0, 10.0, 4.0, 0.0]
+    meta_policy.policies[1].q_table[0] = [0.0, 0.0, 0.0, 10.0]
+    # The router prefers sub-policy 0, whose favorite action 1 is illegal.
+    meta_policy.q_table[0] = [5.0, 1.0]
+    legal = np.array([True, False, True, True])
+
+    action = meta_policy.get_action(0, exploit=True, legal_actions=legal)
+
+    # Sub-policy 0 is still the one selected, and falls back to action 2.
+    self.assertEqual(int(action), 2)
+    self.assertEqual(
+        int(meta_policy.get_primitive_action(0, 1, legal_actions=legal)),
+        3,
+    )
+
+
+class _FixedMaskEnv(dm_env.Environment):
+  """Single-state environment that records actions and reports a fixed mask."""
+
+  def __init__(self, legal_actions: list[bool]):
+    self._legal_actions = legal_actions
+    self.actions: list[int] = []
+
+  def legal_actions(self) -> np.ndarray:
+    return np.array(self._legal_actions, dtype=bool)
+
+  def reset(self) -> dm_env.TimeStep:
+    return dm_env.restart(0)
+
+  def step(self, action: int) -> dm_env.TimeStep:
+    self.actions.append(int(action))
+    return dm_env.transition(reward=0.0, observation=0)
+
+  def observation_spec(self) -> specs.DiscreteArray:
+    return specs.DiscreteArray(num_values=6)
+
+  def action_spec(self) -> specs.DiscreteArray:
+    return specs.DiscreteArray(num_values=len(self._legal_actions))
+
+
+class _NoMaskEnv(dm_env.Environment):
+  """Single-state environment that records actions and reports no mask."""
+
+  def __init__(self):
+    self.actions: list[int] = []
+
+  def reset(self) -> dm_env.TimeStep:
+    return dm_env.restart(0)
+
+  def step(self, action: int) -> dm_env.TimeStep:
+    self.actions.append(int(action))
+    return dm_env.transition(reward=0.0, observation=0)
+
+  def observation_spec(self) -> specs.DiscreteArray:
+    return specs.DiscreteArray(num_values=6)
+
+  def action_spec(self) -> specs.DiscreteArray:
+    return specs.DiscreteArray(num_values=4)
+
+
+class MetaPolicyEnvWrapperMaskingTest(absltest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    model_config = policy_lib.ModelConfig(num_states=6, num_actions=4)
+    sub_paths = []
+    # Sub-policy 0 ranks the actions 1 > 2 > 0 = 3; sub-policy 1 prefers 3.
+    for idx, q_values in enumerate(
+        ([0.0, 10.0, 4.0, 0.0], [0.0, 0.0, 0.0, 10.0])
+    ):
+      sub_policy = tabular.TabularPolicy(model_config)
+      sub_policy.q_table[0] = q_values
+      sub_path = os.path.join(self.create_tempdir().full_path, f"sub_{idx}")
+      sub_policy.save(sub_path)
+      sub_paths.append(sub_path)
+    meta_config = (
+        policy_lib.MetaModelConfig(policy_config=model_config)
+        .with_sub_policy_paths(sub_paths)
+        .apply_environment_spec(
+            observations=specs.DiscreteArray(num_values=6),
+            actions=specs.DiscreteArray(num_values=4),
+        )
+    )
+    self.meta_policy = tabular.TabularMetaPolicy(meta_config)
+
+  def test_unmasked_wrapper_steps_with_illegal_sub_policy_action(self):
+    env = _FixedMaskEnv([True, False, True, True])
+    wrapped = self.meta_policy.wrap_env(env)
+    wrapped.reset()
+
+    wrapped.step(0)
+
+    self.assertEqual(env.actions, [1])
+
+  def test_masked_wrapper_steps_with_best_legal_sub_policy_action(self):
+    env = _FixedMaskEnv([True, False, True, True])
+    wrapped = self.meta_policy.wrap_env(env, mask_illegal_actions=True)
+    wrapped.reset()
+
+    wrapped.step(0)
+    wrapped.step(1)
+
+    self.assertEqual(env.actions, [2, 3])
+    # Every sub-policy stays selectable: the wrapper reports no mask itself.
+    self.assertFalse(hasattr(wrapped, "legal_actions"))
+    self.assertEqual(wrapped.action_spec().num_values, 2)
+
+  def test_masked_wrapper_keeps_sub_policy_action_without_env_mask(self):
+    env = _NoMaskEnv()
+    wrapped = self.meta_policy.wrap_env(env, mask_illegal_actions=True)
+    wrapped.reset()
+
+    wrapped.step(0)
+    wrapped.step(1)
+
+    # The environment reports no legal actions, so nothing is restricted.
+    self.assertEqual(env.actions, [1, 3])
 
 
 if __name__ == "__main__":
