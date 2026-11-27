@@ -84,3 +84,18 @@ This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE)
 for details.
 
 Disclaimer: This is not an official Google product.
+
+## Citing this work
+If you use this library in your work, please cite:
+
+```
+@inproceedings{
+    bolouri2026habitats,
+    title={Habitats: A Framework for Open-Ended Evolution of Agent Objectives},
+    author={Nicolas Bolouri and Gaya Mehenni and Daniel Kenji Toyama},
+    booktitle={First Workshop on Meta Agents: Managing Agents that Manage Agents},
+    year={2026},
+    url={https://openreview.net/forum?id=NbzAfPbkxU}
+}
+```
+
