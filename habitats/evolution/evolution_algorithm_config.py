@@ -24,6 +24,7 @@ from habitats.evolution import offspring_generator as og
 from habitats.evolution import population_initializer as population_initializer_lib
 from habitats.lib import llm_client
 
+
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class EvolutionAlgorithmConfig:
   """Represents the config for the evolution algorithm."""
@@ -56,7 +57,7 @@ class EvolutionAlgorithmConfig:
   llm_backend: str = llm_client.GENAI_BACKEND
 
   # Gemini model used by the mutator and offspring planner.
-  llm_model: str = "gemini-3.5-flash"
+  llm_model: str = "gemini-4-hydrogen"
 
   @classmethod
   def from_dict(cls, data: dict[str, Any]) -> "EvolutionAlgorithmConfig":

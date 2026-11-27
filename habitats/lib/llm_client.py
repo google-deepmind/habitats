@@ -110,7 +110,8 @@ class LLMConfig:
   # Role of the LLM (mutator, etc). This is mainly used for logging purposes.
   role: str
   key: str | None = None
-  timeout_ms: int = 60000
+  # Per-call RPC/HTTP timeout in milliseconds (10 min as default).
+  timeout_ms: int = 600_000
   # Receives one record per `generate()` call; None disables call logging.
   # Carried in the config so that it reaches every LLM created from it, e.g.
   # the per-role clients derived with `with_sub_role`.

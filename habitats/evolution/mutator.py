@@ -29,7 +29,7 @@ class GeminiMutator:
       self,
       llm_config: llm_client.LLMConfig,
       environment: str,
-      model_name: str = "gemini-3.5-flash",
+      model_name: str,
       llm_backend: str = llm_client.GENAI_BACKEND,
   ):
     """Initializes the GeminiMutator."""
